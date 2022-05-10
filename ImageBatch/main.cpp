@@ -352,6 +352,22 @@ void copy_on_files(std::vector<std::string>::iterator& args, const std::vector<s
   operate_files_in_folder(args, end, copy<uint32_t>, copy<uint8_t>);
   }
 
+bool no_alpha(jtk::image<uint32_t>& out, const jtk::image<uint32_t>& im, std::vector<std::string>::iterator& args, const std::vector<std::string>::iterator& end)
+  {
+  args; end;
+  out = im;
+  for (auto& clr : out)
+    {
+    clr = 0xff000000 | clr;
+    }
+  return true;
+  }
+
+void no_alpha_on_files(std::vector<std::string>::iterator& args, const std::vector<std::string>::iterator& end)
+  {
+  operate_files_in_folder(args, end, no_alpha, copy<uint8_t>);
+  }
+
 int main(int argc, char* argv[])
   {
   if (argc < 2)
@@ -377,6 +393,10 @@ int main(int argc, char* argv[])
   cmd.RegCmd("copy",
     "    -copy in out                 copies the files",
     copy_on_files);
+
+  cmd.RegCmd("noalpha",
+    "    -noalpha in out              clears the alpha channel",
+    no_alpha_on_files);
 
   cmd.RunCommands(++args.begin(), args.end());
   return 0;
