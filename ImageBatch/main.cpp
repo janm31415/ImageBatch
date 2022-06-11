@@ -79,7 +79,7 @@ bool write_to_file(const jtk::image<uint32_t>& texture, const std::string& filen
 
 
 
-bool load_image(jtk::image<uint32_t>& im, const std::string& filename, std::string bayer, int bits_per_pixel)
+bool load_image(jtk::image<uint32_t>& im, const std::string& filename, std::string bayer, int bits_per_pixel, bool raw_image)
   {
   auto ext = jtk::get_extension(filename);
   if (ext == "jpg")
@@ -97,7 +97,7 @@ bool load_image(jtk::image<uint32_t>& im, const std::string& filename, std::stri
     im = read_image(filename);
     return true;
     }
-  else if (ext == "pgm")
+  else if (ext == "pgm" && raw_image)
     {
     jtk::image<uint16_t> raw;
     if (!jtk::load_pgm(raw, filename))
@@ -167,6 +167,16 @@ bool save_image(const jtk::image<uint32_t>& im, const std::string& filename)
   return false;
   }
 
+bool load_image(jtk::image<uint16_t>& im, const std::string& filename)
+  {
+  auto ext = jtk::get_extension(filename);
+  if (ext == "pgm")
+    {
+    return jtk::load_pgm(im, filename);
+    }
+  return false;
+  }
+
 bool load_image(jtk::image<uint8_t>& im, const std::string& filename)
   {
   auto ext = jtk::get_extension(filename);
@@ -174,6 +184,48 @@ bool load_image(jtk::image<uint8_t>& im, const std::string& filename)
     {
     return jtk::load_pgm(im, filename);
     }
+  return false;
+  }
+
+bool save_image(const jtk::image<uint16_t>& im, const std::string& filename)
+  {
+  auto ext = jtk::get_extension(filename);
+  if (ext == "pgm")
+    {
+    printf("saving to %s\n", filename.c_str());
+    return jtk::write_pgm(im, filename);
+    }
+  else if (ext == "pgm16")
+    {
+    printf("saving to %s\n", filename.c_str());
+    return jtk::write_pgm(im, filename);
+    }
+  else if (ext == "jpg")
+    {
+    printf("saving to %s\n", filename.c_str());
+    printf("not implemented");
+    return false;
+    }
+  else if (ext == "png")
+    {
+    printf("saving to %s\n", filename.c_str());
+    printf("not implemented");
+    return false;
+    }
+  else if (ext == "bmp")
+    {
+    printf("saving to %s\n", filename.c_str());
+    printf("not implemented");
+    return false;
+    }
+  else if (ext == "ppm")
+    {
+    printf("saving to %s\n", filename.c_str());
+    printf("not implemented");
+    return false;
+    }
+  else
+    printf("Don't know the fileformat of %s", filename.c_str());
   return false;
   }
 
@@ -330,6 +382,7 @@ void only_keep_files_following_regexp(std::vector<std::string>& files, const std
 
 void operate_files_in_folder(std::vector<std::string>::iterator& args, const std::vector<std::string>::iterator& end,
   const std::function<bool(jtk::image<uint32_t>&, const jtk::image<uint32_t>&, std::vector<std::string>::iterator&, const std::vector<std::string>::iterator&)>& op_on_rgb,
+  const std::function<bool(jtk::image<uint16_t>&, const jtk::image<uint16_t>&, std::vector<std::string>::iterator&, const std::vector<std::string>::iterator&)>& op_on_gray16,
   const std::function<bool(jtk::image<uint8_t>&, const jtk::image<uint8_t>&, std::vector<std::string>::iterator&, const std::vector<std::string>::iterator&)>& op_on_gray)
   {
   std::vector<std::string> operation_args;
@@ -338,6 +391,7 @@ void operate_files_in_folder(std::vector<std::string>::iterator& args, const std
   std::string regexp;
   bool subfolders = false;
   bool rename = false;
+  bool raw = false;
   int32_t rename_digits = 4;
   int bits_per_pixel = 12;
   bool sort_numeric = false;
@@ -358,6 +412,8 @@ void operate_files_in_folder(std::vector<std::string>::iterator& args, const std
     {
     if (*args == "-s")
       subfolders = true;
+    else if (*args == "-raw")
+      raw = true;
     else if (args->substr(0, 3) == "-i:")
       {
       input_ext = args->substr(3);
@@ -419,6 +475,7 @@ void operate_files_in_folder(std::vector<std::string>::iterator& args, const std
         continue;
       }
     jtk::image<uint32_t> im;
+    jtk::image<uint16_t> im16;
     jtk::image<uint8_t> img;
 
     std::string p;
@@ -437,13 +494,26 @@ void operate_files_in_folder(std::vector<std::string>::iterator& args, const std
       p = jtk::remove_extension(p);
       p.append("." + output_ext);
       }
-    if (load_image(im, f, bayer, bits_per_pixel))
+    if (load_image(im, f, bayer, bits_per_pixel, raw))
       {
       jtk::image<uint32_t> im_out;
       printf("working on file %s\n", f.c_str());
       auto it = operation_args.begin();
       auto it_end = operation_args.end();
       if (!op_on_rgb(im_out, im, it, it_end))
+        {
+        std::cerr << "Something went wrong!\nType 'ImageBatch -?' for instructions" << std::endl;
+        return;
+        }
+      save_image(im_out, p);
+      }
+    else if (load_image(im16, f))
+      {
+      jtk::image<uint16_t> im_out;
+      printf("working on file %s\n", f.c_str());
+      auto it = operation_args.begin();
+      auto it_end = operation_args.end();
+      if (!op_on_gray16(im_out, im16, it, it_end))
         {
         std::cerr << "Something went wrong!\nType 'ImageBatch -?' for instructions" << std::endl;
         return;
@@ -477,7 +547,7 @@ bool copy(jtk::image<T>& out, const jtk::image<T>& im, std::vector<std::string>:
 
 void copy_on_files(std::vector<std::string>::iterator& args, const std::vector<std::string>::iterator& end)
   {
-  operate_files_in_folder(args, end, copy<uint32_t>, copy<uint8_t>);
+  operate_files_in_folder(args, end, copy<uint32_t>, copy<uint16_t>, copy<uint8_t>);
   }
 
 bool no_alpha(jtk::image<uint32_t>& out, const jtk::image<uint32_t>& im, std::vector<std::string>::iterator& args, const std::vector<std::string>::iterator& end)
@@ -493,7 +563,7 @@ bool no_alpha(jtk::image<uint32_t>& out, const jtk::image<uint32_t>& im, std::ve
 
 void no_alpha_on_files(std::vector<std::string>::iterator& args, const std::vector<std::string>::iterator& end)
   {
-  operate_files_in_folder(args, end, no_alpha, copy<uint8_t>);
+  operate_files_in_folder(args, end, no_alpha, copy<uint16_t>, copy<uint8_t>);
   }
 
 int main(int argc, char* argv[])
@@ -519,7 +589,8 @@ int main(int argc, char* argv[])
     "    -bpp:int                       set the bits per pixels for raw images"
     "    -sortnum                       sort the input files based on the number"
     "                                   in their filename"
-    "    -reg:<regular expression>      only consider files following the regexp");
+    "    -reg:<regular expression>      only consider files following the regexp"
+    "    -raw                           treat 16 bit images as raw bayer images");
 
   cmd.RegCmd("copy",
     "    -copy in out                 copies the files",
