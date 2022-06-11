@@ -1,4 +1,5 @@
 #include <iostream>
+#include <regex>
 
 #include "CmdList.h"
 #include "raw_to_rgb.h"
@@ -41,7 +42,7 @@ jtk::image<uint32_t> read_image(const std::string& filename)
     jtk::image<uint32_t> im32 = jtk::span_to_image(w, h, w, (const uint32_t*)im);
     stbi_image_free(im);
     return im32;
-    }   
+    }
   return jtk::image<uint32_t>();
   }
 
@@ -113,7 +114,7 @@ bool load_image(jtk::image<uint32_t>& im, const std::string& filename, std::stri
     auto im_clr = jtk::bilinear(raw, bayer_type);
     double scale = 255.0 / (double(1 << bits_per_pixel) - 1.0);
     jtk::scale_image(im_clr, scale);
-    im = jtk::clamp_to_rgb(im_clr);      
+    im = jtk::clamp_to_rgb(im_clr);
     return true;
     }
   else if (ext == "ppm")
@@ -129,7 +130,7 @@ bool save_image(const jtk::image<uint32_t>& im, const std::string& filename)
   if (ext == "jpg")
     {
     printf("saving to %s\n", filename.c_str());
-    write_to_file(im, filename);    
+    write_to_file(im, filename);
     return true;
     }
   else if (ext == "pgm16")
@@ -171,7 +172,7 @@ bool load_image(jtk::image<uint8_t>& im, const std::string& filename)
   auto ext = jtk::get_extension(filename);
   if (ext == "pgm")
     {
-    return jtk::load_pgm(im, filename);   
+    return jtk::load_pgm(im, filename);
     }
   return false;
   }
@@ -193,7 +194,7 @@ bool save_image(const jtk::image<uint8_t>& im, const std::string& filename)
   else if (ext == "jpg")
     {
     printf("saving to %s\n", filename.c_str());
-    return write_to_file(jtk::three_gray_to_uint32_t(im,im,im), filename);    
+    return write_to_file(jtk::three_gray_to_uint32_t(im, im, im), filename);
     }
   else if (ext == "png")
     {
@@ -216,6 +217,117 @@ bool save_image(const jtk::image<uint8_t>& im, const std::string& filename)
   return false;
   }
 
+void sort_all_files_based_on_numbers_in_their_filenames(std::vector<std::string>& files)
+  {
+  std::vector<double> numbers;
+  numbers.reserve(files.size());
+  std::vector<uint64_t> indices;
+  indices.reserve(files.size());
+  for (uint64_t i = 0; i < files.size(); ++i)
+    indices.push_back(i);
+  for (const auto& f : files)
+    {
+    std::string fn = jtk::remove_extension(jtk::get_filename(f));
+    std::string nr;
+    bool dot = false;
+    auto rit = fn.rbegin();
+    auto rend = fn.rend();
+    bool digit_found = false;
+    while (rit != rend)
+      {
+      if (std::isdigit(*rit))
+        {
+        digit_found = true;
+        nr.push_back(*rit);
+        }
+      else
+        {
+        if (*rit == '.' && digit_found && !dot)
+          {
+          dot = true;
+          nr.push_back(*rit);
+          }
+        else
+          {
+          if (digit_found)
+            break;
+          }
+        }
+      ++rit;
+      }
+    if (!digit_found)
+      numbers.push_back(std::numeric_limits<double>::max());
+    else
+      {
+      if (dot && nr.back() == '.')
+        nr.push_back('0');
+      std::reverse(nr.begin(), nr.end());
+      std::stringstream str;
+      str << nr;
+      double d;
+      str >> d;
+      numbers.push_back(d);
+      }
+    }
+  std::sort(indices.begin(), indices.end(), [&](int i, int j)
+    {
+    return numbers[i] < numbers[j];
+    });
+  std::vector<std::string> sorted_files;
+  sorted_files.reserve(files.size());
+  for (auto i : indices)
+    {
+    sorted_files.push_back(files[i]);
+    }
+  files.swap(sorted_files);
+  }
+
+namespace
+  {
+  template <class TType, class TIndexType>
+  void _delete_items(std::vector<TType>& vec, const std::vector<TIndexType>& _indices_to_delete)
+    {
+    if (_indices_to_delete.empty() || vec.empty())
+      return;
+    std::vector<TIndexType> indices_to_delete(_indices_to_delete);
+    assert(vec.size() > *std::max_element(indices_to_delete.begin(), indices_to_delete.end()));
+    std::sort(indices_to_delete.begin(), indices_to_delete.end());
+    indices_to_delete.erase(std::unique(indices_to_delete.begin(), indices_to_delete.end()), indices_to_delete.end());
+
+    if (indices_to_delete.size() == vec.size())
+      {
+      vec.clear();
+      return;
+      }
+
+    auto rm_iter = indices_to_delete.begin();
+    auto end = indices_to_delete.end();
+    std::size_t current_index = 0;
+
+    const auto pred = [&](const TType&) {
+      // any more to remove?
+      if (rm_iter == end) { return false; }
+      // is this one specified?
+      if (*rm_iter == current_index++) { return ++rm_iter, true; }
+      return false;
+      };
+
+    vec.erase(std::remove_if(vec.begin(), vec.end(), pred), vec.end());
+    }
+  }
+
+void only_keep_files_following_regexp(std::vector<std::string>& files, const std::string& regexp)
+  {
+  std::regex word_regex(regexp);
+  std::vector<uint64_t> files_to_remove;
+  for (uint64_t i = 0; i < files.size(); ++i)
+    {
+    if (!std::regex_search(files[i], word_regex))
+      files_to_remove.push_back(i);
+    }
+  _delete_items(files, files_to_remove);
+  }
+
 void operate_files_in_folder(std::vector<std::string>::iterator& args, const std::vector<std::string>::iterator& end,
   const std::function<bool(jtk::image<uint32_t>&, const jtk::image<uint32_t>&, std::vector<std::string>::iterator&, const std::vector<std::string>::iterator&)>& op_on_rgb,
   const std::function<bool(jtk::image<uint8_t>&, const jtk::image<uint8_t>&, std::vector<std::string>::iterator&, const std::vector<std::string>::iterator&)>& op_on_gray)
@@ -223,10 +335,12 @@ void operate_files_in_folder(std::vector<std::string>::iterator& args, const std
   std::vector<std::string> operation_args;
   std::string in, out;
   std::string input_ext, output_ext, bayer("BGGR");
+  std::string regexp;
   bool subfolders = false;
   bool rename = false;
   int32_t rename_digits = 4;
   int bits_per_pixel = 12;
+  bool sort_numeric = false;
   if (args == end)
     {
     std::cerr << "Arguments are missing!\n Type 'ImageBatch -?' for instructions" << std::endl;
@@ -265,6 +379,14 @@ void operate_files_in_folder(std::vector<std::string>::iterator& args, const std
       {
       bits_per_pixel = str_to_int(args->substr(5));
       }
+    else if (args->substr(0, 5) == "-reg:")
+      {
+      regexp = args->substr(5);
+      }
+    else if (*args == "-sortnum")
+      {
+      sort_numeric = true;
+      }
     else
       operation_args.push_back(*args);
     ++args;
@@ -282,6 +404,12 @@ void operate_files_in_folder(std::vector<std::string>::iterator& args, const std
   if (subfolders)
     copy_directory_structure(in, out);
   auto files = jtk::get_files_from_directory(in, subfolders);
+  if (!regexp.empty())
+    only_keep_files_following_regexp(files, regexp);
+  if (sort_numeric)
+    {
+    sort_all_files_based_on_numbers_in_their_filenames(files);
+    }
   int index = 0;
   for (auto f : files)
     {
@@ -388,7 +516,10 @@ int main(int argc, char* argv[])
     "    -r:int                         rename files to 0000.xxx 0001.xxx ...\n"
     "                                   where the number of digits is given by int\n"
     "    -b:<BGGR|RGGB|GRBG|GBRG>       set bayer pattern for raw images\n"
-    "    -bpp:int                       set the bits per pixels for raw images");
+    "    -bpp:int                       set the bits per pixels for raw images"
+    "    -sortnum                       sort the input files based on the number"
+    "                                   in their filename"
+    "    -reg:<regular expression>      only consider files following the regexp");
 
   cmd.RegCmd("copy",
     "    -copy in out                 copies the files",
