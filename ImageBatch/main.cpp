@@ -566,6 +566,13 @@ void no_alpha_on_files(std::vector<std::string>::iterator& args, const std::vect
   operate_files_in_folder(args, end, no_alpha, copy<uint16_t>, copy<uint8_t>);
   }
 
+
+/*
+Useful commands:
+-copy C:\scans\Testvoet5 C:\scans\Testvoet5\depth -i:pgm -r:4 -sortnum -reg:depth*
+-copy C:\scans\Testvoet5 C:\scans\Testvoet5\rgb -i:png -r:4 -sortnum -reg:color*
+
+*/
 int main(int argc, char* argv[])
   {
   if (argc < 2)
