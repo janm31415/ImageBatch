@@ -19,6 +19,24 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb/stb_image_write.h"
 
+template <class T>
+T clamp(T f, T a, T b)
+  {
+  return f < a ? a : f > b ? b : f;
+  }
+
+void flip_colors(jtk::image<uint32_t>& im)
+  {
+  for (uint32_t& clr : im)
+    {
+    uint32_t b = clr&0xff;
+    uint32_t g = (clr >> 8) & 0xff;
+    uint32_t r = (clr >> 16) & 0xff;
+    uint32_t a = (clr >> 24) & 0xff;
+    clr = (a<<24)|(b<<16)|(g<<8)|r;
+    }
+  }
+
 bool read_ppm(jtk::image<uint32_t>& im, const std::string& filename)
 {
   using namespace jtk::image_details;
@@ -71,10 +89,10 @@ bool read_ppm(jtk::image<uint32_t>& im, const std::string& filename)
         uint16_t g = halffloat_data[(y*width+x)*4+1];
         uint16_t b = halffloat_data[(y*width+x)*4+2];
         uint16_t a = halffloat_data[(y*width+x)*4+3];
-        float rf = halffloat_to_float(r);
-        float gf = halffloat_to_float(g);
-        float bf = halffloat_to_float(b);
-        float af = halffloat_to_float(a);
+        float rf = clamp(halffloat_to_float(r), 0.f, 1.f);
+        float gf = clamp(halffloat_to_float(g), 0.f, 1.f);
+        float bf = clamp(halffloat_to_float(b), 0.f, 1.f);
+        float af = clamp(halffloat_to_float(a), 0.f, 1.f);
         uint8_t r8 = (uint8_t)(rf*255.f);
         uint8_t g8 = (uint8_t)(gf*255.f);
         uint8_t b8 = (uint8_t)(bf*255.f);
@@ -465,6 +483,7 @@ void operate_files_in_folder(std::vector<std::string>::iterator& args, const std
   bool subfolders = false;
   bool rename = false;
   bool raw = false;
+  bool bgra = false;
   int32_t rename_digits = 4;
   int bits_per_pixel = 12;
   bool sort_numeric = false;
@@ -487,6 +506,8 @@ void operate_files_in_folder(std::vector<std::string>::iterator& args, const std
       subfolders = true;
     else if (*args == "-raw")
       raw = true;
+    else if (*args == "-bgra")
+      bgra = true;
     else if (args->substr(0, 3) == "-i:")
     {
       input_ext = args->substr(3);
@@ -569,6 +590,8 @@ void operate_files_in_folder(std::vector<std::string>::iterator& args, const std
     }
     if (load_image(im, f, bayer, bits_per_pixel, raw))
     {
+      if (bgra)
+        flip_colors(im);
       jtk::image<uint32_t> im_out;
       printf("working on file %s\n", f.c_str());
       auto it = operation_args.begin();
@@ -670,6 +693,7 @@ int main(int argc, char* argv[])
               "    -sortnum                       sort the input files based on the number"
               "                                   in their filename"
               "    -reg:<regular expression>      only consider files following the regexp"
+              "    -bgra                          images are in bgra format instead of rgba"
               "    -raw                           treat 16 bit images as raw bayer images");
   
   cmd.RegCmd("copy",
