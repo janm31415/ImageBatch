@@ -3,11 +3,13 @@ set(HDRS
 ../stb/stb_image.h
 ../stb/stb_image_write.h
 CmdList.h
+lodepng.h
 raw_to_rgb.h
     )
 	
 set(SRCS
 CmdList.cpp
+lodepng.cpp
 main.cpp
 raw_to_rgb.cpp
 )

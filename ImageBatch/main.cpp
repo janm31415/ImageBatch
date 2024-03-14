@@ -19,6 +19,8 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb/stb_image_write.h"
 
+#include "lodepng.h"
+
 template <class T>
 T clamp(T f, T a, T b)
   {
@@ -123,6 +125,43 @@ int32_t str_to_int(const std::string& str)
   return v;
 }
 
+jtk::image<uint8_t> read_image_gray(const std::string& filename)
+{
+  int w, h, nr_of_channels;
+  unsigned char* im = stbi_load(filename.c_str(), &w, &h, &nr_of_channels, 1);
+  if (im)
+  {
+    jtk::image<uint8_t> im8 = jtk::span_to_image(w, h, w, (const uint8_t*)im);
+    stbi_image_free(im);
+    return im8;
+  }
+  return jtk::image<uint8_t>();
+}
+
+
+jtk::image<uint16_t> read_image_16(const std::string& filename)
+{
+  unsigned char* output;
+  unsigned w, h;
+  unsigned error = lodepng_decode_file(&output, &w, &h, filename.c_str(), LCT_GREY, 16);
+  if (error != 0)
+    return jtk::image<uint16_t>();
+  jtk::image<uint16_t> im16 = jtk::span_to_image(w, h, w, (const uint16_t*)output);
+  free(output);
+  return im16;
+  /*
+  int w, h, nr_of_channels;
+  stbi_us* im = stbi_load_16(filename.c_str(), &w, &h, &nr_of_channels, 1);
+  if (im)
+  {
+    jtk::image<uint16_t> im16 = jtk::span_to_image(w, h, w, (const uint16_t*)im);
+    stbi_image_free(im);
+    return im16;
+  }
+  return jtk::image<uint16_t>();
+  */
+}
+
 jtk::image<uint32_t> read_image(const std::string& filename)
 {
   int w, h, nr_of_channels;
@@ -134,6 +173,36 @@ jtk::image<uint32_t> read_image(const std::string& filename)
     return im32;
   }
   return jtk::image<uint32_t>();
+}
+
+
+bool write_to_file(const jtk::image<uint16_t>& texture, const std::string& filename)
+{
+  std::string ext = jtk::get_extension(filename);
+  if (ext.empty())
+    return false;
+  std::transform(ext.begin(), ext.end(), ext.begin(), [](char ch) {return (char)::tolower(ch); });
+  if (ext == "png")
+  {
+  lodepng_encode_file(filename.c_str(), (const unsigned char*)texture.data(), texture.width(), texture.height(), LCT_GREY, 16);
+  }
+  else return false;
+  return true;
+}
+
+
+bool write_to_file(const jtk::image<uint8_t>& texture, const std::string& filename)
+{
+  std::string ext = jtk::get_extension(filename);
+  if (ext.empty())
+    return false;
+  std::transform(ext.begin(), ext.end(), ext.begin(), [](char ch) {return (char)::tolower(ch); });
+  if (ext == "png")
+  {
+    if (!stbi_write_png(filename.c_str(), texture.width(), texture.height(), 1, (void*)texture.data(), texture.stride()))
+      return false;
+  } else return false;
+  return true;
 }
 
 bool write_to_file(const jtk::image<uint32_t>& texture, const std::string& filename)
@@ -265,6 +334,12 @@ bool load_image(jtk::image<uint16_t>& im, const std::string& filename)
   {
     return jtk::load_pgm(im, filename);
   }
+  else if (ext == "png")
+  {
+    im = read_image_16(filename);
+    if (im.width() != 0)
+      return true;
+  }
   return false;
 }
 
@@ -274,6 +349,12 @@ bool load_image(jtk::image<uint8_t>& im, const std::string& filename)
   if (ext == "pgm")
   {
     return jtk::load_pgm(im, filename);
+  }
+  else if (ext == "png")
+  {
+    im = read_image_gray(filename);
+    if (im.width() != 0)
+      return true;
   }
   return false;
 }
@@ -299,9 +380,7 @@ bool save_image(const jtk::image<uint16_t>& im, const std::string& filename)
   }
   else if (ext == "png")
   {
-    printf("saving to %s\n", filename.c_str());
-    printf("not implemented");
-    return false;
+    return write_to_file(im, filename);
   }
   else if (ext == "bmp")
   {
@@ -342,7 +421,7 @@ bool save_image(const jtk::image<uint8_t>& im, const std::string& filename)
   else if (ext == "png")
   {
     printf("saving to %s\n", filename.c_str());
-    return write_to_file(jtk::three_gray_to_uint32_t(im, im, im), filename);
+    return write_to_file(im, filename);
   }
   else if (ext == "bmp")
   {
@@ -588,22 +667,7 @@ void operate_files_in_folder(std::vector<std::string>::iterator& args, const std
       p = jtk::remove_extension(p);
       p.append("." + output_ext);
     }
-    if (load_image(im, f, bayer, bits_per_pixel, raw))
-    {
-      if (bgra)
-        flip_colors(im);
-      jtk::image<uint32_t> im_out;
-      printf("working on file %s\n", f.c_str());
-      auto it = operation_args.begin();
-      auto it_end = operation_args.end();
-      if (!op_on_rgb(im_out, im, it, it_end))
-      {
-        std::cerr << "Something went wrong!\nType 'ImageBatch -?' for instructions" << std::endl;
-        return;
-      }
-      save_image(im_out, p);
-    }
-    else if (load_image(im16, f))
+    if (load_image(im16, f))
     {
       jtk::image<uint16_t> im_out;
       printf("working on file %s\n", f.c_str());
@@ -629,6 +693,21 @@ void operate_files_in_folder(std::vector<std::string>::iterator& args, const std
       }
       save_image(im_out, p);
     }
+    else if (load_image(im, f, bayer, bits_per_pixel, raw))
+    {
+      if (bgra)
+        flip_colors(im);
+      jtk::image<uint32_t> im_out;
+      printf("working on file %s\n", f.c_str());
+      auto it = operation_args.begin();
+      auto it_end = operation_args.end();
+      if (!op_on_rgb(im_out, im, it, it_end))
+      {
+        std::cerr << "Something went wrong!\nType 'ImageBatch -?' for instructions" << std::endl;
+        return;
+      }
+      save_image(im_out, p);
+    }     
     ++index;
   }
 }
