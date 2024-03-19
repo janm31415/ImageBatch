@@ -141,6 +141,7 @@ jtk::image<uint8_t> read_image_gray(const std::string& filename)
 
 jtk::image<uint16_t> read_image_16(const std::string& filename)
 {
+#if 0
   unsigned char* output;
   unsigned w, h;
   unsigned error = lodepng_decode_file(&output, &w, &h, filename.c_str(), LCT_GREY, 16);
@@ -149,7 +150,7 @@ jtk::image<uint16_t> read_image_16(const std::string& filename)
   jtk::image<uint16_t> im16 = jtk::span_to_image(w, h, w, (const uint16_t*)output);
   free(output);
   return im16;
-  /*
+#else
   int w, h, nr_of_channels;
   stbi_us* im = stbi_load_16(filename.c_str(), &w, &h, &nr_of_channels, 1);
   if (im)
@@ -159,7 +160,7 @@ jtk::image<uint16_t> read_image_16(const std::string& filename)
     return im16;
   }
   return jtk::image<uint16_t>();
-  */
+#endif
 }
 
 jtk::image<uint32_t> read_image(const std::string& filename)
@@ -184,7 +185,25 @@ bool write_to_file(const jtk::image<uint16_t>& texture, const std::string& filen
   std::transform(ext.begin(), ext.end(), ext.begin(), [](char ch) {return (char)::tolower(ch); });
   if (ext == "png")
   {
-  lodepng_encode_file(filename.c_str(), (const unsigned char*)texture.data(), texture.width(), texture.height(), LCT_GREY, 16);
+  //lodepng_encode_file(filename.c_str(), (const unsigned char*)texture.data(), texture.width(), texture.height(), LCT_GREY, 16);
+  unsigned char* buffer;
+  size_t buffersize;
+  //unsigned error = lodepng_encode_memory(&buffer, &buffersize, image, w, h, colortype, bitdepth);
+  unsigned error;
+  LodePNGState state;
+  lodepng_state_init(&state);
+  state.info_raw.colortype = LCT_GREY;
+  state.info_raw.bitdepth = 16;
+  state.info_png.color.colortype = LCT_GREY;
+  state.info_png.color.bitdepth = 16;
+  state.info_png.sbit_defined = 1;
+  state.info_png.sbit_r = 16;
+  lodepng_encode(&buffer, &buffersize, (const unsigned char*)texture.data(), texture.width(), texture.height(), &state);
+  error = state.error;
+  lodepng_state_cleanup(&state);
+  if (!error) 
+    error = lodepng_save_file(buffer, buffersize, filename.c_str());
+  free(buffer);
   }
   else return false;
   return true;
